@@ -2,19 +2,19 @@
   "name": "vscode-auto-import",
   "displayName": "Auto Import Plus",
   "description": "Fast workspace-wide auto import for TypeScript, JavaScript, Python, and Java — powered by a native Rust indexer",
-  "version": "0.1.0",
-  "publisher": "kodebox",
+  "version": "0.1.1",
+  "publisher": "newdlops",
   "private": true,
   "license": "MIT",
   "icon": "resources/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kodebox/vscode-auto-import"
+    "url": "https://github.com/newdlops/vscode-auto-import"
   },
   "bugs": {
-    "url": "https://github.com/kodebox/vscode-auto-import/issues"
+    "url": "https://github.com/newdlops/vscode-auto-import/issues"
   },
-  "homepage": "https://github.com/kodebox/vscode-auto-import#readme",
+  "homepage": "https://github.com/newdlops/vscode-auto-import#readme",
   "keywords": [
     "auto-import",
     "autoimport",
@@ -195,11 +195,14 @@
     "watch": "node esbuild.js --watch",
     "build:prod": "node esbuild.js --production",
     "check": "tsc --noEmit",
-    "daemon:build": "cd daemon && cargo build --release && mkdir -p ../resources/bin && cp target/release/autoimport-daemon ../resources/bin/autoimport-daemon-$(node -e \"process.stdout.write(process.platform + '-' + process.arch)\")",
+    "daemon:build": "node scripts/build-daemon.js",
     "icon": "node scripts/gen-icon.js",
+    "verify:release": "node scripts/verify-release.js",
     "test:e2e:compile": "tsc -p tsconfig.test.json",
     "test:e2e": "npm run daemon:build && npm run build && npm run test:e2e:compile && node out-test/runTest.js",
-    "package": "vsce package"
+    "package": "npm run build:prod && npm run verify:release && npx --yes @vscode/vsce package --no-dependencies",
+    "package:release": "npm run build:prod && npm run verify:release && npx --yes @vscode/vsce package --no-dependencies",
+    "publish": "npm run build:prod && npm run verify:release && npx --yes @vscode/vsce publish --no-dependencies"
   },
   "devDependencies": {
     "@types/glob": "^8.1.0",

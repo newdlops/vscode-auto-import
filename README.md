@@ -8,7 +8,7 @@ Fast workspace-wide auto-import suggestions for **TypeScript / JavaScript / Pyth
 - Pylance/Jedi can be heavy, and their import suggestions often skip `node_modules` / `site-packages` symbols in big repos.
 - Many WASM-based auto-import extensions crash on large Python libraries (tree-sitter `Aborted()` panics).
 
-Auto Import Plus ships a standalone Rust daemon that indexes your entire workspace **and** its 3rd-party libraries (node_modules, Python site-packages) into a compact symbol table, then serves suggestions in **1–2 ms per keystroke**.
+Auto Import Plus builds a small native Rust daemon for your OS on first activation. The daemon indexes your entire workspace **and** its 3rd-party libraries (node_modules, Python site-packages) into a compact symbol table, then serves suggestions in **1–2 ms per keystroke**.
 
 ## Features
 
@@ -44,19 +44,21 @@ Search for **"Auto Import Plus"** in the VS Code extensions view.
 ### From a `.vsix`
 
 ```bash
-code --install-extension vscode-auto-import-0.1.0.vsix
+code --install-extension vscode-auto-import-0.1.1.vsix
 ```
+
+The first activation compiles the Rust daemon for the current OS/CPU and caches it in VS Code global storage. If `cargo` is not available, the extension downloads official `rustup-init`, installs a minimal Rust toolchain into its own global storage directory, and builds with that managed Cargo.
 
 ### Build locally
 
 Requires **Node ≥ 20** and **Rust ≥ 1.75**.
 
 ```bash
-git clone https://github.com/kodebox/vscode-auto-import.git
+git clone https://github.com/newdlops/vscode-auto-import.git
 cd vscode-auto-import
 npm install
-npm run daemon:build          # compiles the Rust daemon into resources/bin/
 npm run build                 # bundles the TS extension into dist/extension.js
+npm run daemon:build          # optional: prebuilds the daemon for local dev/e2e
 ```
 
 Launch with `F5` (Run Extension) using the included `.vscode/launch.json`.
@@ -133,20 +135,22 @@ extension/
 ├── CHANGELOG.md
 ├── LICENSE
 ├── resources/
-│   ├── icon.png
-│   └── bin/
-│       ├── autoimport-daemon-darwin-arm64
-│       ├── autoimport-daemon-darwin-x64
-│       ├── autoimport-daemon-linux-x64
-│       ├── autoimport-daemon-linux-arm64
-│       └── autoimport-daemon-win32-x64.exe
+│   └── icon.png
+├── daemon/
+│   ├── Cargo.toml
+│   ├── Cargo.lock
+│   └── src/
 └── dist/
     └── extension.js
 ```
 
+No platform daemon binaries are shipped in the VSIX. On first activation the extension runs `cargo build --release --locked` from the bundled `daemon/` source and copies the resulting binary to VS Code global storage, under a versioned `bin/` directory. If no system Cargo is found, it downloads `rustup-init`, verifies its `.sha256` file, and installs a minimal toolchain under the extension's own `CARGO_HOME` and `RUSTUP_HOME`.
+
 ## Troubleshooting
 
-- **"daemon binary missing for linux-x64":** the extension is missing a Rust build for your platform. Use the build-from-source steps above, or open an issue.
+- **"native daemon build failed":** run **Auto Import: Show Logs** to inspect the Cargo or rustup error. The extension builds the daemon on first activation.
+- **Corporate/offline machines:** the first activation may need access to `static.rust-lang.org` for Rust and `crates.io` for Cargo dependencies unless they are already cached locally.
+- **Windows C compiler errors:** rustup installs Rust/Cargo, but native C dependencies may still require Microsoft C++ Build Tools.
 - **Suggestions for a freshly installed `pip` package don't appear:** run the command **Auto Import: Rebuild Workspace Index**, or just restart VS Code.
 - **Cache seems stale:** delete `.vscode/.auto-import-cache/` and reopen the workspace.
 - **"cache save failed: …":** make sure the workspace directory is writable; alternatively set `autoImport.cache.location` to `global`.
@@ -156,9 +160,19 @@ extension/
 The extension has 29 end-to-end tests covering all 4 languages, library scanning, re-export flattening, cache reload, and multi-line import merging.
 
 ```bash
-npm test               # runs the E2E suite via @vscode/test-electron
-npm run daemon:build   # compiles the Rust daemon
+npm run build          # bundles the TS extension
+npm run daemon:build   # optional: prebuilds the Rust daemon for local dev/e2e
+npm run test:e2e       # runs the E2E suite via @vscode/test-electron
+npm run icon           # regenerates resources/icon.png
+npm run package        # TS + release layout check + vsce package -> .vsix
+npm run publish        # same, but uploads to the VS Code marketplace
 ```
+
+### Release checklist
+
+1. Bump `package.json` `version` + add a CHANGELOG.md entry.
+2. Run `npm run verify:release` to ensure the VSIX includes `daemon/` source and excludes prebuilt binaries.
+3. `git tag v0.1.x && git push --tags` — the release workflow uploads the `.vsix` as a GitHub release asset.
 
 See [`PLAN.md`](./PLAN.md) for the full internal design document.
 

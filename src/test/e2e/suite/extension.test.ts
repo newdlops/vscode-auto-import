@@ -2,7 +2,7 @@ import * as assert from 'node:assert';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 
-const EXTENSION_ID = 'kodebox.vscode-auto-import';
+const EXTENSION_ID = 'newdlops.vscode-auto-import';
 
 function wait(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));

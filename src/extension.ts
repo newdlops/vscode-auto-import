@@ -1,9 +1,8 @@
 import * as path from 'node:path';
-import * as fs from 'node:fs';
 import * as vscode from 'vscode';
 import { DaemonCompletionProvider } from './completion/daemonProvider';
 import { getConfig, type Config } from './config';
-import { DaemonClient, resolveDaemonBinary, type InitParams, type InitResult } from './daemon/client';
+import { DaemonClient, ensureDaemonBinary, type InitParams, type InitResult } from './daemon/client';
 import { createLogger, type Logger } from './logger';
 import { languageForPath } from './parsers/base';
 
@@ -44,19 +43,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     `minPrefix=${config.minPrefixLength} maxResults=${config.maxResults} logLevel=${config.logLevel}`,
   );
 
-  const binaryPath = resolveDaemonBinary(context.extensionPath);
-  if (!binaryPath || !fs.existsSync(binaryPath)) {
-    const msg = `daemon binary missing for ${process.platform}-${process.arch}. expected: ${binaryPath}`;
-    logger.error(msg);
-    await vscode.window.showErrorMessage(`Auto Import: ${msg}`);
-    return;
-  }
-  logger.info(`daemon binary: ${binaryPath}`);
-
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (!workspaceRoot) {
     logger.info('no workspace folder — daemon not started');
   } else {
+    let binaryPath: string;
+    try {
+      binaryPath = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: 'Auto Import: preparing native indexer',
+        },
+        () =>
+          ensureDaemonBinary({
+            extensionPath: context.extensionPath,
+            storagePath: context.globalStorageUri.fsPath,
+            extensionVersion: String(context.extension.packageJSON.version ?? 'dev'),
+            logger: logger!,
+          }),
+      );
+    } catch (err) {
+      const msg =
+        'native daemon build failed. Install Rust/Cargo and check the Auto Import output log.';
+      logger.error(msg, err);
+      const choice = await vscode.window.showErrorMessage(`Auto Import: ${msg}`, 'Show Logs');
+      if (choice === 'Show Logs') logger.show();
+      return;
+    }
+    logger.info(`daemon binary: ${binaryPath}`);
+
     const cacheDir =
       config.cache.location === 'global'
         ? path.join(context.globalStorageUri.fsPath, 'index-cache')
