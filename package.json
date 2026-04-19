@@ -1,0 +1,151 @@
+{
+  "name": "vscode-auto-import",
+  "displayName": "Auto Import Plus",
+  "description": "Fast workspace-wide auto import for TypeScript, Python, and Java",
+  "version": "0.0.1",
+  "publisher": "kodebox",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:typescript",
+    "onLanguage:typescriptreact",
+    "onLanguage:javascript",
+    "onLanguage:javascriptreact",
+    "onLanguage:python",
+    "onLanguage:java"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Auto Import Plus",
+      "properties": {
+        "autoImport.languages": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "typescript",
+              "javascript",
+              "python",
+              "java"
+            ]
+          },
+          "default": [
+            "typescript",
+            "javascript",
+            "python",
+            "java"
+          ],
+          "description": "Languages to provide auto-imports for"
+        },
+        "autoImport.excludeGlobs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/node_modules/**",
+            "**/.venv/**",
+            "**/venv/**",
+            "**/__pycache__/**",
+            "**/target/**",
+            "**/build/**",
+            "**/dist/**",
+            "**/out/**",
+            "**/.git/**"
+          ],
+          "description": "Glob patterns to exclude from indexing"
+        },
+        "autoImport.minPrefixLength": {
+          "type": "integer",
+          "default": 2,
+          "minimum": 1,
+          "description": "Minimum prefix length before suggestions are offered"
+        },
+        "autoImport.maxResults": {
+          "type": "integer",
+          "default": 20,
+          "minimum": 1,
+          "description": "Maximum number of completion results"
+        },
+        "autoImport.preferBarrelImports": {
+          "type": "boolean",
+          "default": true,
+          "description": "Prefer importing from barrel (index) files when available"
+        },
+        "autoImport.python.respectAllDunder": {
+          "type": "boolean",
+          "default": true,
+          "description": "Respect __all__ list when determining exported Python symbols"
+        },
+        "autoImport.typescript.preferTypeImports": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "always",
+            "never"
+          ],
+          "default": "auto",
+          "description": "Whether to use 'import type' for type-only imports"
+        },
+        "autoImport.java.includeInnerClasses": {
+          "type": "boolean",
+          "default": true,
+          "description": "Index public inner classes as separately importable symbols"
+        },
+        "autoImport.cache.maxDiskMB": {
+          "type": "number",
+          "default": 20,
+          "description": "Maximum cache size on disk in megabytes"
+        },
+        "autoImport.cache.location": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "global"
+          ],
+          "default": "workspace",
+          "description": "Where to store the cache (workspace uses .vscode/.auto-import-cache)"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "autoImport.rebuildIndex",
+        "title": "Auto Import: Rebuild Workspace Index"
+      },
+      {
+        "command": "autoImport.showCacheStats",
+        "title": "Auto Import: Show Cache Stats"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "build:prod": "node esbuild.js --production",
+    "check": "tsc --noEmit",
+    "smoke": "esbuild --bundle --platform=node --format=cjs --log-level=warning --outfile=dist/smoke.js src/test/smokePersistence.ts && node dist/smoke.js",
+    "smoke:parsers": "node esbuild.js && esbuild --bundle --platform=node --format=cjs --log-level=warning --outfile=dist/smokeParsers.js src/test/smokeParsers.ts && node dist/smokeParsers.js",
+    "smoke:workspace": "node esbuild.js && esbuild --bundle --platform=node --format=cjs --log-level=warning --outfile=dist/smokeWorkspace.js --external:vscode src/test/smokeWorkspace.ts && node dist/smokeWorkspace.js",
+    "smoke:completion": "node esbuild.js && esbuild --bundle --platform=node --format=cjs --log-level=warning --outfile=dist/smokeCompletion.js --alias:vscode=./src/test/mockVscode.ts src/test/smokeCompletion.ts && node dist/smokeCompletion.js",
+    "smoke:all": "npm run smoke && npm run smoke:parsers && npm run smoke:workspace && npm run smoke:completion",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.21.0",
+    "tree-sitter-wasms": "^0.1.13",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "web-tree-sitter": "^0.22.6"
+  }
+}

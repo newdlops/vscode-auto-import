@@ -1,0 +1,12 @@
+.git/
+.github/
+.vscode/
+.vscode-test/
+src/
+node_modules/
+tsconfig.json
+esbuild.js
+PLAN.md
+*.map
+coverage/
+!resources/wasm/**
