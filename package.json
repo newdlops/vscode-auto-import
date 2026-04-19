@@ -1,10 +1,31 @@
 {
   "name": "vscode-auto-import",
   "displayName": "Auto Import Plus",
-  "description": "Fast workspace-wide auto import for TypeScript, Python, and Java",
-  "version": "0.0.1",
+  "description": "Fast workspace-wide auto import for TypeScript, JavaScript, Python, and Java — powered by a native Rust indexer",
+  "version": "0.1.0",
   "publisher": "kodebox",
   "private": true,
+  "license": "MIT",
+  "icon": "resources/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kodebox/vscode-auto-import"
+  },
+  "bugs": {
+    "url": "https://github.com/kodebox/vscode-auto-import/issues"
+  },
+  "homepage": "https://github.com/kodebox/vscode-auto-import#readme",
+  "keywords": [
+    "auto-import",
+    "autoimport",
+    "typescript",
+    "python",
+    "django",
+    "java",
+    "intellisense",
+    "completion",
+    "rust"
+  ],
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -64,7 +85,7 @@
         },
         "autoImport.minPrefixLength": {
           "type": "integer",
-          "default": 2,
+          "default": 1,
           "minimum": 1,
           "description": "Minimum prefix length before suggestions are offered"
         },
@@ -112,6 +133,45 @@
           ],
           "default": "workspace",
           "description": "Where to store the cache (workspace uses .vscode/.auto-import-cache)"
+        },
+        "autoImport.libraries.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Index 3rd-party libraries (node_modules / site-packages)"
+        },
+        "autoImport.libraries.tsNodeModules": {
+          "type": "boolean",
+          "default": true,
+          "description": "Index TypeScript/JavaScript packages from node_modules"
+        },
+        "autoImport.libraries.pythonSitePackages": {
+          "type": "boolean",
+          "default": true,
+          "description": "Index Python packages from site-packages (auto-discovered from .venv/venv/env)"
+        },
+        "autoImport.libraries.pythonMaxDepth": {
+          "type": "integer",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 8,
+          "description": "Maximum directory depth when scanning Python packages"
+        },
+        "autoImport.libraries.pythonExtraPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional absolute paths to scan as Python site-packages"
+        },
+        "autoImport.logLevel": {
+          "type": "string",
+          "enum": [
+            "info",
+            "debug"
+          ],
+          "default": "info",
+          "description": "Log verbosity level (debug emits per-file and per-query lines)"
         }
       }
     },
@@ -123,6 +183,10 @@
       {
         "command": "autoImport.showCacheStats",
         "title": "Auto Import: Show Cache Stats"
+      },
+      {
+        "command": "autoImport.showLogs",
+        "title": "Auto Import: Show Logs"
       }
     ]
   },
@@ -131,21 +195,21 @@
     "watch": "node esbuild.js --watch",
     "build:prod": "node esbuild.js --production",
     "check": "tsc --noEmit",
-    "smoke": "esbuild --bundle --platform=node --format=cjs --log-level=warning --outfile=dist/smoke.js src/test/smokePersistence.ts && node dist/smoke.js",
-    "smoke:parsers": "node esbuild.js && esbuild --bundle --platform=node --format=cjs --log-level=warning --outfile=dist/smokeParsers.js src/test/smokeParsers.ts && node dist/smokeParsers.js",
-    "smoke:workspace": "node esbuild.js && esbuild --bundle --platform=node --format=cjs --log-level=warning --outfile=dist/smokeWorkspace.js --external:vscode src/test/smokeWorkspace.ts && node dist/smokeWorkspace.js",
-    "smoke:completion": "node esbuild.js && esbuild --bundle --platform=node --format=cjs --log-level=warning --outfile=dist/smokeCompletion.js --alias:vscode=./src/test/mockVscode.ts src/test/smokeCompletion.ts && node dist/smokeCompletion.js",
-    "smoke:all": "npm run smoke && npm run smoke:parsers && npm run smoke:workspace && npm run smoke:completion",
+    "daemon:build": "cd daemon && cargo build --release && mkdir -p ../resources/bin && cp target/release/autoimport-daemon ../resources/bin/autoimport-daemon-$(node -e \"process.stdout.write(process.platform + '-' + process.arch)\")",
+    "icon": "node scripts/gen-icon.js",
+    "test:e2e:compile": "tsc -p tsconfig.test.json",
+    "test:e2e": "npm run daemon:build && npm run build && npm run test:e2e:compile && node out-test/runTest.js",
     "package": "vsce package"
   },
   "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.10",
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.21.0",
-    "tree-sitter-wasms": "^0.1.13",
+    "glob": "^13.0.6",
+    "mocha": "^11.7.5",
     "typescript": "^5.4.0"
-  },
-  "dependencies": {
-    "web-tree-sitter": "^0.22.6"
   }
 }

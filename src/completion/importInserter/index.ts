@@ -1,37 +1,42 @@
 import * as vscode from 'vscode';
 import type { Config } from '../../config';
-import type { HotEntry } from '../../index/hotIndex';
-import type { IndexedFile, SymbolIndex } from '../../index/symbolIndex';
 import type { ParserLanguage } from '../../parsers/base';
 import { buildJavaImportEdits } from './java';
 import { buildPythonImportEdits } from './python';
 import { buildTsImportEdits } from './typescript';
 
-export function buildImportEdits(
+export interface ImportContext {
+  name: string;
+  flags: number;
+  targetPath: string;
+  fileQualifier?: string;
+  parentQualifier?: string;
+}
+
+export function buildImportEditsFor(
   doc: vscode.TextDocument,
   lang: ParserLanguage,
-  name: string,
-  entry: HotEntry,
-  targetFile: IndexedFile,
-  index: SymbolIndex,
+  ctx: ImportContext,
   config: Config,
 ): vscode.TextEdit[] {
-  const targetPath = index.paths.get(targetFile.pathId);
   switch (lang) {
     case 'typescript':
     case 'javascript':
-      return buildTsImportEdits(doc, name, targetPath, entry.flags, config);
+      return buildTsImportEdits(
+        doc,
+        ctx.name,
+        ctx.targetPath,
+        ctx.fileQualifier,
+        ctx.flags,
+        config,
+      );
     case 'python': {
-      const module = targetFile.fileQualifier;
-      if (!module) return [];
-      return buildPythonImportEdits(doc, name, module);
+      if (!ctx.fileQualifier) return [];
+      return buildPythonImportEdits(doc, ctx.name, ctx.fileQualifier);
     }
     case 'java': {
-      const pkg = targetFile.fileQualifier;
-      if (!pkg) return [];
-      const parent =
-        entry.parentNameId !== undefined ? index.names.get(entry.parentNameId) : undefined;
-      return buildJavaImportEdits(doc, name, pkg, parent);
+      if (!ctx.fileQualifier) return [];
+      return buildJavaImportEdits(doc, ctx.name, ctx.fileQualifier, ctx.parentQualifier);
     }
   }
 }

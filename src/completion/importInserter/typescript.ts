@@ -7,10 +7,11 @@ export function buildTsImportEdits(
   doc: vscode.TextDocument,
   name: string,
   targetPath: string,
+  moduleSpecifier: string | undefined,
   flags: number,
   config: Config,
 ): vscode.TextEdit[] {
-  const modulePath = toRelativeModule(doc.uri.fsPath, targetPath);
+  const modulePath = moduleSpecifier ?? toRelativeModule(doc.uri.fsPath, targetPath);
   if (!modulePath) return [];
 
   const isDefault = (flags & SymbolFlag.DefaultExport) !== 0;
@@ -60,22 +61,60 @@ function tryMergeIntoExistingNamed(
   const fullEnd = fullStart + m[0].length;
   const indent = m[1]!;
   const kw = m[2]!;
-  const inner = m[3]!.trim();
+  const innerRaw = m[3]!;
   const fromQuote = m[4]!;
   const closeQuote = m[5]!;
 
-  const existing = inner
+  const existing = innerRaw
     .split(',')
     .map((s) => s.trim().split(/\s+as\s+/)[0]!.trim())
     .filter(Boolean);
   if (existing.includes(name)) return undefined;
 
-  const newInner = inner.length > 0 ? `${inner}, ${name}` : name;
-  const newLine = `${indent}${kw} { ${newInner} }${fromQuote}${modulePath}${closeQuote};`;
+  const isMultiLine = innerRaw.includes('\n');
+  const newLine = isMultiLine
+    ? `${indent}${kw} {${insertMultiLine(innerRaw, name)}}${fromQuote}${modulePath}${closeQuote};`
+    : `${indent}${kw} { ${insertSingleLine(innerRaw, name)} }${fromQuote}${modulePath}${closeQuote};`;
+
   return vscode.TextEdit.replace(
     new vscode.Range(doc.positionAt(fullStart), doc.positionAt(fullEnd)),
     newLine,
   );
+}
+
+function insertSingleLine(inner: string, name: string): string {
+  const trimmed = inner.replace(/,\s*$/, '').trim();
+  return trimmed.length > 0 ? `${trimmed}, ${name}` : name;
+}
+
+function insertMultiLine(inner: string, name: string): string {
+  const lines = inner.split('\n');
+  // Find last non-empty content line (skip trailing whitespace-only line)
+  let lastIdx = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i]!.trim().length > 0) {
+      lastIdx = i;
+      break;
+    }
+  }
+  if (lastIdx < 0) {
+    // inner is blank — place the name on its own line with default indent
+    return `\n  ${name}\n`;
+  }
+
+  const lastLine = lines[lastIdx]!;
+  const indentMatch = lastLine.match(/^(\s*)/);
+  const nameIndent = indentMatch ? indentMatch[1]! : '  ';
+  const hasTrailingComma = lastLine.trimEnd().endsWith(',');
+
+  const mutated = [...lines];
+  if (hasTrailingComma) {
+    mutated.splice(lastIdx + 1, 0, `${nameIndent}${name},`);
+  } else {
+    mutated[lastIdx] = `${lastLine}${lastLine.endsWith(' ') ? '' : ''},`;
+    mutated.splice(lastIdx + 1, 0, `${nameIndent}${name}`);
+  }
+  return mutated.join('\n');
 }
 
 function findTsInsertLine(source: string): number {
@@ -100,7 +139,7 @@ function toRelativeModule(currentFile: string, targetFile: string): string | und
   let rel = path.relative(path.dirname(currentFile), targetFile);
   if (!rel) return undefined;
   rel = rel.replace(/\\/g, '/');
-  rel = rel.replace(/\.d\.ts$/, '').replace(/\.(ts|tsx|mts|cts|jsx|mjs|cjs|js)$/, '');
+  rel = rel.replace(/\.d\.(ts|mts|cts)$/, '').replace(/\.(ts|tsx|mts|cts|jsx|mjs|cjs|js)$/, '');
   rel = rel.replace(/\/index$/, '');
   if (!rel.startsWith('.') && !rel.startsWith('/')) rel = './' + rel;
   return rel;

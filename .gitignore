@@ -1,9 +1,15 @@
 node_modules/
 dist/
 out/
+out-test/
+daemon/target/
+resources/bin/
 *.vsix
+*.vsix.tmp
 .vscode-test/
 .DS_Store
 .vscode/.auto-import-cache/
 coverage/
 *.log
+log.txt
+.claude/

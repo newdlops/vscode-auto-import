@@ -1,27 +1,10 @@
 const esbuild = require('esbuild');
-const fs = require('node:fs');
-const path = require('node:path');
 
 const watch = process.argv.includes('--watch');
 const production = process.argv.includes('--production');
 
-const WASM_SOURCES = [
-  'node_modules/web-tree-sitter/tree-sitter.wasm',
-  'node_modules/tree-sitter-wasms/out/tree-sitter-tsx.wasm',
-  'node_modules/tree-sitter-wasms/out/tree-sitter-javascript.wasm',
-  'node_modules/tree-sitter-wasms/out/tree-sitter-python.wasm',
-  'node_modules/tree-sitter-wasms/out/tree-sitter-java.wasm',
-];
-
 function copyWasms() {
-  const dest = path.join(__dirname, 'resources', 'wasm');
-  fs.mkdirSync(dest, { recursive: true });
-  for (const src of WASM_SOURCES) {
-    const abs = path.join(__dirname, src);
-    const out = path.join(dest, path.basename(src));
-    fs.copyFileSync(abs, out);
-  }
-  console.log(`copied ${WASM_SOURCES.length} wasm files → resources/wasm/`);
+  // no-op: parsers now live in the Rust daemon
 }
 
 const buildOptions = {

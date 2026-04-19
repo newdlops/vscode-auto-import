@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 export type SupportedLanguage = 'typescript' | 'javascript' | 'python' | 'java';
 export type TypeImportPolicy = 'auto' | 'always' | 'never';
 export type CacheLocation = 'workspace' | 'global';
+export type LogLevel = 'info' | 'debug';
 
 export interface Config {
   languages: SupportedLanguage[];
@@ -23,6 +24,14 @@ export interface Config {
     maxDiskMB: number;
     location: CacheLocation;
   };
+  libraries: {
+    enabled: boolean;
+    tsNodeModules: boolean;
+    pythonSitePackages: boolean;
+    pythonMaxDepth: number;
+    pythonExtraPaths: string[];
+  };
+  logLevel: LogLevel;
 }
 
 export function getConfig(): Config {
@@ -45,7 +54,7 @@ export function getConfig(): Config {
       '**/out/**',
       '**/.git/**',
     ]),
-    minPrefixLength: c.get<number>('minPrefixLength', 2),
+    minPrefixLength: c.get<number>('minPrefixLength', 1),
     maxResults: c.get<number>('maxResults', 20),
     preferBarrelImports: c.get<boolean>('preferBarrelImports', true),
     python: {
@@ -61,5 +70,13 @@ export function getConfig(): Config {
       maxDiskMB: c.get<number>('cache.maxDiskMB', 20),
       location: c.get<CacheLocation>('cache.location', 'workspace'),
     },
+    libraries: {
+      enabled: c.get<boolean>('libraries.enabled', true),
+      tsNodeModules: c.get<boolean>('libraries.tsNodeModules', true),
+      pythonSitePackages: c.get<boolean>('libraries.pythonSitePackages', true),
+      pythonMaxDepth: c.get<number>('libraries.pythonMaxDepth', 3),
+      pythonExtraPaths: c.get<string[]>('libraries.pythonExtraPaths', []),
+    },
+    logLevel: c.get<LogLevel>('logLevel', 'info'),
   };
 }

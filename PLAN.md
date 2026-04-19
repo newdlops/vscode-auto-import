@@ -385,6 +385,98 @@ vscode-auto-import/
 - 코드 포매터 아님 (import 삽입 위치만 최소한 결정)
 - Cross-workspace (멀티 루트) 초기 미지원 — 1 워크스페이스 가정
 
+## 14.5 Rust Daemon (v2 아키텍처)
+
+V1(TypeScript + web-tree-sitter)이 대형 파이썬 site-packages에서 WASM abort 를 일으킨 것을 계기로 코어를 Rust 바이너리 데몬으로 이전. VSCode 확장은 얇은 IPC 클라이언트로 축소됨.
+
+### 컴포넌트 레이아웃
+
+```
+daemon/                               Rust 크레이트 (~2,800 LOC)
+├── Cargo.toml                       tree-sitter 0.22, rayon, tokio, bincode, ...
+├── src/
+│   ├── main.rs                      tokio runtime entry
+│   ├── ipc/
+│   │   ├── protocol.rs              Request/Response/Notification 타입
+│   │   └── server.rs                stdio JSON-RPC loop + periodic save task
+│   ├── index/                       StringTable / HotIndex / PrefixIndex / SymbolIndex(+IndexSnapshot)
+│   ├── parsers/                     tree-sitter native + python_fallback (regex)
+│   ├── persistence.rs               bincode save/load
+│   └── workspace/
+│       ├── indexer.rs               upsert/remove/cascade + mtime 단축경로 + dirty flag
+│       ├── scanner.rs               walkdir + rayon 병렬 parse
+│       ├── library.rs               node_modules / site-packages 확장 스캔
+│       └── re_export_resolver.rs    TS 상대경로 + Python dot-path resolver
+
+resources/bin/                        per-platform 배포 바이너리
+└── autoimport-daemon-{darwin|linux|win32}-{arm64|x64}[.exe]
+
+src/                                  VSCode 확장 (TS, ~500 LOC)
+├── extension.ts                     daemon spawn + watcher + commands
+├── daemon/client.ts                 JSON-RPC 래퍼, InitParams/InitResult 타입
+└── completion/                      provider + per-language import inserter
+```
+
+### IPC 프로토콜
+
+Line-delimited JSON-RPC over stdio. 단일 프로세스 내 단일 daemon.
+
+| Method | 용도 |
+|---|---|
+| `init` | workspaceRoot, languages, excludeGlobs, libraries 옵션, cacheDir 전달. 응답: `{cacheLoaded, cachedFiles}` |
+| `scan` | workspace + libraries full scan. 완료 시 cache 저장 |
+| `indexFile` | debounced 단일 파일 (+선택적 source 문자열) |
+| `removeFile` | 삭제 반영 |
+| `query` | prefix 검색 → `Suggestion[]` |
+| `stats` | 현재 인덱스/인덱서 카운터 |
+| `shutdown` | dirty 플래그 검사 → 최종 cache flush → 종료 |
+
+알림: `ready`, `log`, `scanProgress`, `scanComplete`, `librariesScanComplete`.
+
+### 캐시
+
+- 경로: `${workspaceRoot}/.vscode/.auto-import-cache/index.bin`
+- 포맷: bincode (binary), 단일 파일 atomic rename
+- 내용: `IndexSnapshot { version, names, paths, files: Vec<(FileId, IndexedFile)> }` + `reExportsByBarrel`
+- 저장 시점: scan 완료, rebuildIndex, 10초 주기 dirty flush, shutdown 직전
+- 로드: init 시 존재하면 복원 후 `reflatten_all_barrels()` 로 barrel 의존성 그래프 재구성
+- 증분 최적화: `index_file_disk()` 에서 파일 mtime이 캐시된 값과 일치하면 read+parse 생략
+
+### VSCode 확장 바인딩
+
+- `resolveDaemonBinary(extensionPath)` → `resources/bin/autoimport-daemon-${platform}-${arch}${ext}`
+- `DaemonClient`: ChildProcess + stdin/stdout + pending map + notification fan-out
+- `DaemonCompletionProvider`: `() => DaemonClient` getter로 컨슈머에서 재시작 후에도 안전
+- `FileSystemWatcher('**/*.{ts,tsx,...}')` 가 외부 파일 변경 시 `client.indexFile(path)` 트리거
+
+### 관련 커맨드
+
+- `autoImport.rebuildIndex` — 강제 full rescan
+- `autoImport.showCacheStats` — `stats` 요청 결과 표시
+- `autoImport.showLogs` — OutputChannel reveal
+- `autoImport.daemonStatus` — `{running, lastInit}` 반환 (E2E 검증용)
+- `autoImport.restartDaemon` — daemon shutdown + respawn + init (cacheLoaded 검증)
+
+### E2E (15 테스트)
+
+`src/test/e2e/` + `@vscode/test-electron` + Mocha. 임시 워크스페이스 setup 에서 TS/Python/Java/node_modules/extra-site-packages fixture 를 생성한 뒤 `executeCompletionItemProvider` 로 suggestions 검증. 커버리지:
+
+- 15/15 통과, 총 3초
+- 언어별 (TS/Python/Java) completion + import edit
+- 라이브러리 (node_modules, pythonExtraPaths) 매핑
+- 재export 평탄화, 이미 import된 심볼 필터링
+- persistent cache 파일 존재
+- daemon 재시작 시 cache reload + 동작 연속성
+- 파일 외부 변경 (`fs.writeFile`) → FileSystemWatcher → re-index
+
+### 크로스 플랫폼 CI
+
+`.github/workflows/build.yml`:
+- matrix build 5 타깃 (darwin-arm64/x64, linux-x64/arm64, win32-x64)
+- artifact 병합 → `resources/bin/` 구성 → `vsce package`
+- macOS / ubuntu 에서 E2E (Linux 는 xvfb-run)
+- `v*` 태그 푸시 시 릴리스 자산 자동 업로드
+
 ## 15. 리스크 및 대응
 
 | 리스크 | 대응 |
