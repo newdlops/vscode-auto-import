@@ -33,6 +33,32 @@ async function suggestionsAt(
   )) as vscode.CompletionList;
 }
 
+async function quickFixesAt(
+  root: string,
+  relPath: string,
+  marker: string,
+  selectionLen = marker.length,
+): Promise<vscode.CodeAction[]> {
+  const uri = vscode.Uri.file(path.join(root, relPath));
+  const doc = await vscode.workspace.openTextDocument(uri);
+  await vscode.window.showTextDocument(doc, { preview: true });
+  const text = doc.getText();
+  const positions = wordPositions(text, marker);
+  assert.ok(positions.length >= 2, `${relPath} should contain '${marker}' at least twice`);
+  const idx = positions[1]!;
+  const range = new vscode.Range(
+    doc.positionAt(idx),
+    doc.positionAt(idx + selectionLen),
+  );
+  const actions = (await vscode.commands.executeCommand(
+    'vscode.executeCodeActionProvider',
+    uri,
+    range,
+    vscode.CodeActionKind.QuickFix.value,
+  )) as Array<vscode.CodeAction | vscode.Command> | undefined;
+  return (actions ?? []).filter(isCodeAction);
+}
+
 function wordPositions(text: string, word: string): number[] {
   const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const re = new RegExp(`\\b${escaped}\\b`, 'g');
@@ -46,6 +72,10 @@ function autoImportItems(list: vscode.CompletionList): vscode.CompletionItem[] {
   return list.items.filter(
     (i) => typeof i.detail === 'string' && i.detail.startsWith('↪ auto-import'),
   );
+}
+
+function isCodeAction(item: vscode.CodeAction | vscode.Command): item is vscode.CodeAction {
+  return 'edit' in item || 'kind' in item;
 }
 
 suite('Auto Import E2E', function () {
@@ -105,6 +135,28 @@ suite('Auto Import E2E', function () {
     assert.ok(typeof item.label === 'object', 'label should be a CompletionItemLabel');
     const desc = (item.label as vscode.CompletionItemLabel).description ?? '';
     assert.match(desc, /\.\/user/, `description should show import path, got "${desc}"`);
+  });
+
+  test('TS: Quick Fix offers User import action', async () => {
+    const uri = vscode.Uri.file(path.join(root, 'src', 'consumer.ts'));
+    const actions = await quickFixesAt(root, 'src/consumer.ts', 'User');
+    const action = actions.find((candidate) =>
+      candidate.title.includes("Add import for 'User' from ./user"),
+    );
+    assert.ok(
+      action,
+      `User quick fix not found. titles: ${actions.map((candidate) => candidate.title).join(', ')}`,
+    );
+    assert.ok(
+      action!.kind?.contains(vscode.CodeActionKind.QuickFix),
+      `expected quickfix kind, got ${action!.kind?.value ?? 'undefined'}`,
+    );
+    const edits = action!.edit?.get(uri) ?? [];
+    assert.ok(edits.length > 0, 'quick fix should include text edits');
+    assert.ok(
+      edits.some((edit) => /import\s+\{\s*User\s*\}\s+from\s+'\.\/user'/.test(edit.newText)),
+      `expected import edit, got: ${edits.map((edit) => JSON.stringify(edit.newText)).join(', ')}`,
+    );
   });
 
   test('Python: label.description shows module path', async () => {

@@ -13,3 +13,6 @@ coverage/
 *.log
 log.txt
 .claude/
+.zoek-rs
+.vscode
+.lh

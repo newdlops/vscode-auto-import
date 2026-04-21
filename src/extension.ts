@@ -1,5 +1,7 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { DaemonQuickFixProvider } from './codeActions/daemonQuickFixProvider';
+import { AutoImportEngine } from './completion/autoImportEngine';
 import { DaemonCompletionProvider } from './completion/daemonProvider';
 import { getConfig, type Config } from './config';
 import { DaemonClient, ensureDaemonBinary, type InitParams, type InitResult } from './daemon/client';
@@ -110,13 +112,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
 
   if (client) {
-    const provider = new DaemonCompletionProvider(() => client, config, logger);
+    const autoImport = new AutoImportEngine(() => client, config, logger);
+    const completionProvider = new DaemonCompletionProvider(autoImport);
+    const quickFixProvider = new DaemonQuickFixProvider(autoImport);
     const selectors = buildSelectors(config);
     if (selectors.length > 0) {
       context.subscriptions.push(
-        vscode.languages.registerCompletionItemProvider(selectors, provider),
+        vscode.languages.registerCompletionItemProvider(selectors, completionProvider),
+        vscode.languages.registerCodeActionsProvider(
+          selectors,
+          quickFixProvider,
+          DaemonQuickFixProvider.metadata,
+        ),
       );
-      logger.info(`completion provider registered for [${selectors.map((s) => s.language).join(', ')}]`);
+      logger.info(
+        `completion/code action providers registered for [${selectors.map((s) => s.language).join(', ')}]`,
+      );
     }
 
     context.subscriptions.push(
