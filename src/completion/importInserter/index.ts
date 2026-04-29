@@ -35,8 +35,12 @@ export function buildImportEditsFor(
       return buildPythonImportEdits(doc, ctx.name, ctx.fileQualifier);
     }
     case 'java': {
-      if (!ctx.fileQualifier) return [];
-      return buildJavaImportEdits(doc, ctx.name, ctx.fileQualifier, ctx.parentQualifier);
+      return buildJavaImportEdits(
+        doc,
+        ctx.name,
+        ctx.fileQualifier ?? '',
+        ctx.parentQualifier,
+      );
     }
   }
 }

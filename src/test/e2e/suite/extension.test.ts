@@ -561,6 +561,149 @@ suite('Auto Import E2E', function () {
     );
   });
 
+  test('TS: default + named import — adds named clause without breaking default', async () => {
+    const target = path.join(root, 'src', 'mergeDefaultNamed.ts');
+    const src = `import getCurrentUser from './user';\n\nfunction f() {\n  const a = User;\n}\n`;
+    await vscode.workspace.fs.writeFile(vscode.Uri.file(target), Buffer.from(src, 'utf-8'));
+    await wait(400);
+    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(target));
+    await vscode.window.showTextDocument(doc);
+    const text = doc.getText();
+    const idx = text.indexOf('a = User');
+    const pos = doc.positionAt(idx + 'a = Us'.length);
+    const list = (await vscode.commands.executeCommand(
+      'vscode.executeCompletionItemProvider',
+      doc.uri,
+      pos,
+    )) as vscode.CompletionList;
+    const item = autoImportItems(list).find((i) => labelOf(i) === 'User');
+    assert.ok(item, 'User auto-import should be available');
+    const edit = item!.additionalTextEdits![0]!;
+    // Must NOT introduce a duplicate `import { User } from './user'` line.
+    // Either inline `, { User }` or insert as a new line — both should leave
+    // the existing `import getCurrentUser from './user';` intact.
+    if (/^,\s*\{\s*User\s*\}/.test(edit.newText)) {
+      // Acceptable: inline default + named
+    } else {
+      assert.match(
+        edit.newText,
+        /^import\s+\{\s*User\s*\}\s+from\s+'\.\/user'/,
+        `default+named merge produced: ${JSON.stringify(edit.newText)}`,
+      );
+    }
+  });
+
+  test('TS: trailing comment on multi-line import does not eat the comma', async () => {
+    const target = path.join(root, 'src', 'mergeMultiComment.ts');
+    const src = [
+      `import {`,
+      `  getCurrentUser // keep this name`,
+      `} from './user';`,
+      ``,
+      `function f() {`,
+      `  const u = User;`,
+      `}`,
+      ``,
+    ].join('\n');
+    await vscode.workspace.fs.writeFile(vscode.Uri.file(target), Buffer.from(src, 'utf-8'));
+    await wait(400);
+    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(target));
+    await vscode.window.showTextDocument(doc);
+    const text = doc.getText();
+    const idx = text.indexOf('= User');
+    const pos = doc.positionAt(idx + '= Us'.length);
+    const list = (await vscode.commands.executeCommand(
+      'vscode.executeCompletionItemProvider',
+      doc.uri,
+      pos,
+    )) as vscode.CompletionList;
+    const item = findByLabel(list, 'User');
+    const edit = item.additionalTextEdits![0]!;
+    // The new text must not produce a comma INSIDE the comment (e.g. `// keep this name,`).
+    const lines = edit.newText.split('\n');
+    for (const line of lines) {
+      const commentStart = line.indexOf('//');
+      if (commentStart >= 0) {
+        const afterComment = line.slice(commentStart);
+        assert.ok(
+          !/,$/.test(afterComment.trimEnd()),
+          `comma was placed inside a comment: ${JSON.stringify(line)}`,
+        );
+      }
+    }
+    assert.match(edit.newText, /\bUser\b/, 'replacement should still include User');
+  });
+
+  test('TS: alreadyImported across multi-line import block filters duplicate', async () => {
+    const target = path.join(root, 'src', 'multilineAlready.ts');
+    const src = `import {\n  User,\n  Order,\n} from './barrel';\n\nfunction f(): void {\n  const x = User;\n}\n`;
+    await vscode.workspace.fs.writeFile(vscode.Uri.file(target), Buffer.from(src, 'utf-8'));
+    await wait(400);
+    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(target));
+    await vscode.window.showTextDocument(doc);
+    const idx = doc.getText().indexOf('= User');
+    const pos = doc.positionAt(idx + '= Use'.length);
+    const list = (await vscode.commands.executeCommand(
+      'vscode.executeCompletionItemProvider',
+      doc.uri,
+      pos,
+    )) as vscode.CompletionList;
+    const dupes = autoImportItems(list).filter((i) => labelOf(i) === 'User');
+    assert.strictEqual(dupes.length, 0, 'User in multi-line import should be filtered');
+  });
+
+  test('Python: backslash continuation merges into existing flat import', async () => {
+    const target = path.join(root, 'pkg', 'mergePyContinuation.py');
+    const src = `from pkg.models import Account, \\\n    Invoice\n\ndef foo():\n    z = Q\n`;
+    await vscode.workspace.fs.writeFile(vscode.Uri.file(target), Buffer.from(src, 'utf-8'));
+    await wait(400);
+    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(target));
+    await vscode.window.showTextDocument(doc);
+    const idx = doc.getText().indexOf('z = Q');
+    const pos = doc.positionAt(idx + 'z = '.length + 1);
+    const list = (await vscode.commands.executeCommand(
+      'vscode.executeCompletionItemProvider',
+      doc.uri,
+      pos,
+    )) as vscode.CompletionList;
+    // Q is in a different module so it doesn't merge here, but the test is
+    // about whether Invoice (already imported via continuation) appears as
+    // a duplicate.
+    const dupes = autoImportItems(list).filter((i) => labelOf(i) === 'Invoice');
+    assert.strictEqual(dupes.length, 0, 'Invoice imported via line continuation should be filtered');
+  });
+
+  test('Python: paren-form with trailing comment on last item', async () => {
+    const target = path.join(root, 'pkg', 'mergePyParenComment.py');
+    const src = `from pkg.models import (\n    Account,  # the account model\n)\n\ndef foo():\n    b = Invoice\n`;
+    await vscode.workspace.fs.writeFile(vscode.Uri.file(target), Buffer.from(src, 'utf-8'));
+    await wait(400);
+    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(target));
+    await vscode.window.showTextDocument(doc);
+    const idx = doc.getText().indexOf('b = Invoice');
+    const pos = doc.positionAt(idx + 'b = Inv'.length);
+    const list = (await vscode.commands.executeCommand(
+      'vscode.executeCompletionItemProvider',
+      doc.uri,
+      pos,
+    )) as vscode.CompletionList;
+    const item = findByLabel(list, 'Invoice');
+    const edit = item.additionalTextEdits![0]!;
+    // Must not put a comma inside the `# comment` text.
+    const lines = edit.newText.split('\n');
+    for (const line of lines) {
+      const commentStart = line.indexOf('#');
+      if (commentStart >= 0) {
+        const afterComment = line.slice(commentStart);
+        assert.ok(
+          !/,$/.test(afterComment.trimEnd()),
+          `comma was placed inside a comment: ${JSON.stringify(line)}`,
+        );
+      }
+    }
+    assert.match(edit.newText, /\bInvoice\b/);
+  });
+
   test('incremental edit removes stale symbol', async () => {
     const target = path.join(root, 'src', 'order.ts');
     const original = (await vscode.workspace.fs.readFile(vscode.Uri.file(target))).toString();

@@ -457,7 +457,39 @@ fn merge_exports(
 }
 
 fn compute_python_module(file_path: &str, workspace_root: &str) -> Option<String> {
-    let rel = Path::new(file_path).strip_prefix(workspace_root).ok()?;
+    let path = Path::new(file_path);
+
+    // If the file is inside a `site-packages` directory anywhere in the path,
+    // use the segment after `site-packages` as the dotted module path. This
+    // avoids garbage like `.venv.lib.python3.11.site-packages.requests.api`.
+    if let Some(after) = strip_after_segment(path, "site-packages") {
+        return module_from_relative(&after);
+    }
+
+    let rel = match path.strip_prefix(workspace_root) {
+        Ok(r) => r.to_path_buf(),
+        Err(_) => return None,
+    };
+
+    // Walk up from the file directory to the highest ancestor that still has
+    // an `__init__.py`. The dotted path starts at the directory just below
+    // that ancestor (handles src layouts, where `src/` is not part of the
+    // module path).
+    let abs_dir = match path.parent() {
+        Some(p) => p.to_path_buf(),
+        None => return module_from_relative(&rel),
+    };
+    let workspace_path = Path::new(workspace_root);
+    let pkg_root = find_package_root(&abs_dir, workspace_path);
+    if let Some(root_parent) = pkg_root {
+        if let Ok(below) = path.strip_prefix(&root_parent) {
+            return module_from_relative(below);
+        }
+    }
+    module_from_relative(&rel)
+}
+
+fn module_from_relative(rel: &Path) -> Option<String> {
     let no_ext = rel.with_extension("");
     let mut parts: Vec<String> = no_ext
         .components()
@@ -470,4 +502,44 @@ fn compute_python_module(file_path: &str, workspace_root: &str) -> Option<String
         return None;
     }
     Some(parts.join("."))
+}
+
+fn strip_after_segment(path: &Path, marker: &str) -> Option<std::path::PathBuf> {
+    let mut found = false;
+    let mut out = std::path::PathBuf::new();
+    for c in path.components() {
+        if found {
+            out.push(c);
+            continue;
+        }
+        if let Some(s) = c.as_os_str().to_str() {
+            if s == marker {
+                found = true;
+            }
+        }
+    }
+    if found && !out.as_os_str().is_empty() {
+        Some(out)
+    } else {
+        None
+    }
+}
+
+fn find_package_root(dir: &Path, workspace_root: &Path) -> Option<std::path::PathBuf> {
+    let mut current = dir.to_path_buf();
+    let mut highest_with_init: Option<std::path::PathBuf> = None;
+    while current.starts_with(workspace_root) {
+        let init_py = current.join("__init__.py");
+        let init_pyi = current.join("__init__.pyi");
+        if init_py.exists() || init_pyi.exists() {
+            highest_with_init = Some(current.clone());
+        } else if highest_with_init.is_some() {
+            break;
+        }
+        match current.parent() {
+            Some(p) if p != current => current = p.to_path_buf(),
+            _ => break,
+        }
+    }
+    highest_with_init.and_then(|p| p.parent().map(|q| q.to_path_buf()))
 }

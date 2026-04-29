@@ -1,4 +1,3 @@
-import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { Config } from '../config';
 import type { DaemonClient, Suggestion } from '../daemon/client';
@@ -7,6 +6,7 @@ import type { Logger } from '../logger';
 import { languageForPath, type ParserLanguage } from '../parsers/base';
 import { getAlreadyImportedSymbols } from './existingImports';
 import { buildImportEditsFor } from './importInserter';
+import { resolveTsModuleSpecifier } from './importInserter/tsModuleResolver';
 
 const IDENT_RE = /[A-Za-z_$][\w$]*/;
 const EXACT_IDENT_RE = /^[A-Za-z_$][\w$]*$/;
@@ -188,12 +188,11 @@ function importSpecifier(
     if (lang === 'java') return `${suggestion.fileQualifier}.${suggestion.name}`;
     return suggestion.fileQualifier;
   }
-
-  let rel = path.relative(path.dirname(doc.uri.fsPath), suggestion.targetPath).replace(/\\/g, '/');
-  rel = rel.replace(/\.d\.(ts|mts|cts)$/, '').replace(/\.(ts|tsx|mts|cts|jsx|mjs|cjs|js)$/, '');
-  rel = rel.replace(/\/index$/, '');
-  if (!rel.startsWith('.') && !rel.startsWith('/')) rel = './' + rel;
-  return rel;
+  if (lang === 'typescript' || lang === 'javascript') {
+    const resolved = resolveTsModuleSpecifier(doc.uri.fsPath, suggestion.targetPath);
+    if (resolved) return resolved;
+  }
+  return suggestion.targetPath;
 }
 
 function toVsCodeKind(kind: number): vscode.CompletionItemKind {

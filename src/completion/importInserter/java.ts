@@ -6,14 +6,24 @@ export function buildJavaImportEdits(
   packageName: string,
   parentQualifier: string | undefined,
 ): vscode.TextEdit[] {
-  if (!packageName) return [];
-  const fqcn = parentQualifier
-    ? `${packageName}.${parentQualifier}.${name}`
-    : `${packageName}.${name}`;
+  if (!packageName && !parentQualifier) return [];
+
+  const fqcn = packageName
+    ? parentQualifier
+      ? `${packageName}.${parentQualifier}.${name}`
+      : `${packageName}.${name}`
+    : parentQualifier
+      ? `${parentQualifier}.${name}`
+      : name;
 
   const source = doc.getText();
   if (
-    new RegExp(`^[\\t ]*import\\s+(?:static\\s+)?${escapeRegex(fqcn)};`, 'm').test(source) ||
+    new RegExp(`^[\\t ]*import\\s+(?:static\\s+)?${escapeRegex(fqcn)};`, 'm').test(source)
+  ) {
+    return [];
+  }
+  if (
+    packageName &&
     new RegExp(`^[\\t ]*import\\s+${escapeRegex(packageName)}\\.\\*;`, 'm').test(source)
   ) {
     return [];
