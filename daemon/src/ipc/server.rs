@@ -607,11 +607,15 @@ fn run_query(indexer: &WorkspaceIndexer, q: &QueryParams) -> Vec<Suggestion> {
     scored.sort_by(|a, b| b.1.cmp(&a.1));
     let mut seen = std::collections::HashSet::new();
     scored.retain(|(s, _)| {
+        let source_key = s
+            .file_qualifier
+            .clone()
+            .unwrap_or_else(|| s.target_path.clone());
         seen.insert((
             s.name.clone(),
-            s.target_path.clone(),
-            s.file_qualifier.clone(),
+            source_key,
             s.parent_qualifier.clone(),
+            (s.flags & SymbolFlag::MODULE_IMPORT) != 0,
         ))
     });
     scored.truncate(q.limit);

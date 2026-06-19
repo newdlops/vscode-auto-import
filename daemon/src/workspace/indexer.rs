@@ -124,6 +124,16 @@ impl WorkspaceIndexer {
         path: &str,
         override_qualifier: Option<&str>,
     ) -> bool {
+        self.index_file_disk_with_export_flags(parser_bundle, path, override_qualifier, 0)
+    }
+
+    pub fn index_file_disk_with_export_flags(
+        &self,
+        parser_bundle: &mut ParserBundle,
+        path: &str,
+        override_qualifier: Option<&str>,
+        extra_export_flags: u32,
+    ) -> bool {
         let Some(lang) = ParserLanguage::from_path(path) else {
             return false;
         };
@@ -146,7 +156,7 @@ impl WorkspaceIndexer {
         {
             let guard = self.handle.index.lock().unwrap();
             if let Some(existing) = guard.get_file(path) {
-                if existing.mtime == mtime_ms {
+                if extra_export_flags == 0 && existing.mtime == mtime_ms {
                     return true;
                 }
             }
@@ -157,13 +167,14 @@ impl WorkspaceIndexer {
             Err(_) => return false,
         };
 
-        self.index_file_source(
+        self.index_file_source_with_export_flags(
             parser_bundle,
             path,
             &source,
             mtime_ms,
             lang,
             override_qualifier,
+            extra_export_flags,
         )
     }
 
@@ -175,6 +186,27 @@ impl WorkspaceIndexer {
         mtime_ms: u64,
         lang: ParserLanguage,
         override_qualifier: Option<&str>,
+    ) -> bool {
+        self.index_file_source_with_export_flags(
+            parser_bundle,
+            path,
+            source,
+            mtime_ms,
+            lang,
+            override_qualifier,
+            0,
+        )
+    }
+
+    fn index_file_source_with_export_flags(
+        &self,
+        parser_bundle: &mut ParserBundle,
+        path: &str,
+        source: &str,
+        mtime_ms: u64,
+        lang: ParserLanguage,
+        override_qualifier: Option<&str>,
+        extra_export_flags: u32,
     ) -> bool {
         if source.len() as u64 > MAX_FILE_SIZE_BYTES {
             self.handle.atomic_large.fetch_add(1, Ordering::Relaxed);
@@ -190,7 +222,7 @@ impl WorkspaceIndexer {
         {
             let guard = self.handle.index.lock().unwrap();
             if let Some(existing) = guard.get_file(path) {
-                if existing.content_hash == hash {
+                if extra_export_flags == 0 && existing.content_hash == hash {
                     return true;
                 }
             }
@@ -245,7 +277,12 @@ impl WorkspaceIndexer {
         }
 
         let flattened = self.flatten_barrel(path, lang, &extraction.re_exports);
-        let all_exports = merge_exports(extraction.exports, flattened);
+        let mut all_exports = merge_exports(extraction.exports, flattened);
+        if extra_export_flags != 0 {
+            for export in &mut all_exports {
+                export.flags |= extra_export_flags;
+            }
+        }
 
         {
             let mut guard = self.handle.index.lock().unwrap();

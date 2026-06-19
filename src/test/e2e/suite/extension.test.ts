@@ -222,6 +222,15 @@ suite('Auto Import E2E', function () {
     assert.match(text, /import\s+\*\s+as\s+fs\s+from\s+'node:fs'/, `edit: ${text}`);
   });
 
+  test('TS: Node stdlib createRequire → "from \'node:module\'"', async () => {
+    const list = await suggestionsAt(root, 'src/consumer.ts', 'createRequire', 8);
+    const item = findByLabel(list, 'createRequire');
+    const desc = (item.label as vscode.CompletionItemLabel).description ?? '';
+    assert.strictEqual(desc, 'node:module');
+    const text = item.additionalTextEdits![0]!.newText;
+    assert.match(text, /import\s+\{\s*createRequire\s*\}\s+from\s+'node:module'/, `edit: ${text}`);
+  });
+
   test('Python: suggests Account with dotted-path import', async () => {
     const list = await suggestionsAt(root, 'pkg/consumer.py', 'Account', 3);
     const item = findByLabel(list, 'Account');
@@ -275,6 +284,18 @@ suite('Auto Import E2E', function () {
     assert.match(text, /import\s+json/, `edit: ${text}`);
   });
 
+  test('Python: stdlib ThreadPoolExecutor is suggested', async () => {
+    const list = await suggestionsAt(root, 'pkg/consumer.py', 'ThreadPoolExecutor', 8);
+    const item = findByLabel(list, 'ThreadPoolExecutor');
+    const desc = (item.label as vscode.CompletionItemLabel).description ?? '';
+    assert.ok(
+      desc === 'concurrent.futures' || desc === 'concurrent.futures.thread',
+      `unexpected description: ${desc}`,
+    );
+    const text = item.additionalTextEdits![0]!.newText;
+    assert.match(text, /from\s+concurrent\.futures(\.thread)?\s+import\s+ThreadPoolExecutor/, `edit: ${text}`);
+  });
+
   test('Java: suggests Foo with FQCN import', async () => {
     const list = await suggestionsAt(root, 'com/example/Consumer.java', 'Foo', 2);
     const item = findByLabel(list, 'Foo');
@@ -298,6 +319,15 @@ suite('Auto Import E2E', function () {
     assert.strictEqual(desc, 'java.util.ArrayList');
     const text = item.additionalTextEdits![0]!.newText;
     assert.match(text, /import\s+java\.util\.ArrayList;/, `edit: ${text}`);
+  });
+
+  test('Java: JDK stdlib ReentrantLock import', async () => {
+    const list = await suggestionsAt(root, 'com/example/Consumer.java', 'ReentrantLock', 8);
+    const item = findByLabel(list, 'ReentrantLock');
+    const desc = (item.label as vscode.CompletionItemLabel).description ?? '';
+    assert.strictEqual(desc, 'java.util.concurrent.locks.ReentrantLock');
+    const text = item.additionalTextEdits![0]!.newText;
+    assert.match(text, /import\s+java\.util\.concurrent\.locks\.ReentrantLock;/, `edit: ${text}`);
   });
 
   test('filters already-imported symbol', async () => {
