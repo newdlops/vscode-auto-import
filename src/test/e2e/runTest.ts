@@ -25,7 +25,7 @@ async function setupWorkspace(): Promise<{ root: string; pyLibRoot: string }> {
   );
   await fs.writeFile(
     path.join(root, 'src', 'consumer.ts'),
-    `// markers: User Order FakeClient UserId\nfunction main(): void {\n  const u = User;\n  const o = Order;\n  const c = FakeClient;\n  const i: UserId = 0;\n}\n`,
+    `// markers: User Order FakeClient UserId readFileSync fs\nfunction main(): void {\n  const u = User;\n  const o = Order;\n  const c = FakeClient;\n  const i: UserId = 0;\n  const r = readFileSync;\n  const f = fs;\n}\n`,
     'utf-8',
   );
 
@@ -65,7 +65,7 @@ async function setupWorkspace(): Promise<{ root: string; pyLibRoot: string }> {
   );
   await fs.writeFile(
     path.join(root, 'pkg', 'consumer.py'),
-    `# markers: Account Invoice FakeLibCls Q F\ndef main():\n    a = Account\n    b = Invoice\n    c = FakeLibCls\n    d = Q\n    e = F\n`,
+    `# markers: Account Invoice FakeLibCls Q F Path json\ndef main():\n    a = Account\n    b = Invoice\n    c = FakeLibCls\n    d = Q\n    e = F\n    p = Path\n    j = json\n`,
     'utf-8',
   );
   await fs.writeFile(
@@ -97,7 +97,7 @@ async function setupWorkspace(): Promise<{ root: string; pyLibRoot: string }> {
   );
   await fs.writeFile(
     path.join(root, 'com', 'example', 'Consumer.java'),
-    `// markers: Foo Bar Inner\npackage com.example;\n\npublic class Consumer {\n    void run() {\n        Object x = Foo;\n        Object y = Inner;\n        Object z = Bar;\n    }\n}\n`,
+    `// markers: Foo Bar Inner ArrayList\npackage com.example;\n\npublic class Consumer {\n    void run() {\n        Object x = Foo;\n        Object y = Inner;\n        Object z = Bar;\n        Object a = ArrayList;\n    }\n}\n`,
     'utf-8',
   );
 

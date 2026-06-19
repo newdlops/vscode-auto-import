@@ -135,6 +135,8 @@ suite('Auto Import E2E', function () {
     assert.ok(typeof item.label === 'object', 'label should be a CompletionItemLabel');
     const desc = (item.label as vscode.CompletionItemLabel).description ?? '';
     assert.match(desc, /\.\/user/, `description should show import path, got "${desc}"`);
+    const labelDetail = (item.label as vscode.CompletionItemLabel).detail ?? '';
+    assert.match(labelDetail, /Auto Import Plus/, `label detail should identify provider, got "${labelDetail}"`);
   });
 
   test('TS: Quick Fix offers User import action', async () => {
@@ -202,6 +204,24 @@ suite('Auto Import E2E', function () {
     assert.match(text, /from\s+'fake-lib'/, `edit: ${text}`);
   });
 
+  test('TS: Node stdlib readFileSync → "from \'node:fs\'"', async () => {
+    const list = await suggestionsAt(root, 'src/consumer.ts', 'readFileSync', 6);
+    const item = findByLabel(list, 'readFileSync');
+    const desc = (item.label as vscode.CompletionItemLabel).description ?? '';
+    assert.strictEqual(desc, 'node:fs');
+    const text = item.additionalTextEdits![0]!.newText;
+    assert.match(text, /import\s+\{\s*readFileSync\s*\}\s+from\s+'node:fs'/, `edit: ${text}`);
+  });
+
+  test('TS: Node stdlib module fs → namespace import', async () => {
+    const list = await suggestionsAt(root, 'src/consumer.ts', 'fs', 2);
+    const item = findByLabel(list, 'fs');
+    const desc = (item.label as vscode.CompletionItemLabel).description ?? '';
+    assert.strictEqual(desc, 'node:fs');
+    const text = item.additionalTextEdits![0]!.newText;
+    assert.match(text, /import\s+\*\s+as\s+fs\s+from\s+'node:fs'/, `edit: ${text}`);
+  });
+
   test('Python: suggests Account with dotted-path import', async () => {
     const list = await suggestionsAt(root, 'pkg/consumer.py', 'Account', 3);
     const item = findByLabel(list, 'Account');
@@ -237,6 +257,24 @@ suite('Auto Import E2E', function () {
     assert.match(text, /from\s+fakelib\s+import\s+FakeLibCls/, `edit: ${text}`);
   });
 
+  test('Python: stdlib Path → "from pathlib import Path"', async () => {
+    const list = await suggestionsAt(root, 'pkg/consumer.py', 'Path', 3);
+    const item = findByLabel(list, 'Path');
+    const desc = (item.label as vscode.CompletionItemLabel).description ?? '';
+    assert.strictEqual(desc, 'pathlib');
+    const text = item.additionalTextEdits![0]!.newText;
+    assert.match(text, /from\s+pathlib\s+import\s+Path/, `edit: ${text}`);
+  });
+
+  test('Python: stdlib module json → plain import', async () => {
+    const list = await suggestionsAt(root, 'pkg/consumer.py', 'json', 3);
+    const item = findByLabel(list, 'json');
+    const desc = (item.label as vscode.CompletionItemLabel).description ?? '';
+    assert.strictEqual(desc, 'json');
+    const text = item.additionalTextEdits![0]!.newText;
+    assert.match(text, /import\s+json/, `edit: ${text}`);
+  });
+
   test('Java: suggests Foo with FQCN import', async () => {
     const list = await suggestionsAt(root, 'com/example/Consumer.java', 'Foo', 2);
     const item = findByLabel(list, 'Foo');
@@ -251,6 +289,15 @@ suite('Auto Import E2E', function () {
     assert.ok(item, `Inner not suggested, labels: ${labels}`);
     const text = item!.additionalTextEdits![0]!.newText;
     assert.match(text, /import\s+com\.example\.Foo\.Inner;/, `edit: ${text}`);
+  });
+
+  test('Java: JDK stdlib ArrayList import', async () => {
+    const list = await suggestionsAt(root, 'com/example/Consumer.java', 'ArrayList', 5);
+    const item = findByLabel(list, 'ArrayList');
+    const desc = (item.label as vscode.CompletionItemLabel).description ?? '';
+    assert.strictEqual(desc, 'java.util.ArrayList');
+    const text = item.additionalTextEdits![0]!.newText;
+    assert.match(text, /import\s+java\.util\.ArrayList;/, `edit: ${text}`);
   });
 
   test('filters already-imported symbol', async () => {

@@ -21,6 +21,8 @@ export const SymbolFlag = {
   ReExport: 1 << 2,
   Deprecated: 1 << 3,
   InnerClass: 1 << 4,
+  ModuleImport: 1 << 5,
+  StandardLibrary: 1 << 6,
 } as const;
 
 export type SymbolFlags = number;

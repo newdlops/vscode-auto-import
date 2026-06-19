@@ -271,6 +271,30 @@ impl WorkspaceIndexer {
         self.cascade_to_barrels(path);
     }
 
+    pub fn index_synthetic_file(
+        &self,
+        path: &str,
+        file_qualifier: Option<&str>,
+        exports: Vec<ExportedSymbol>,
+    ) {
+        self.clear_barrel_deps(path);
+        {
+            let mut map = self.handle.re_exports_by_barrel.lock().unwrap();
+            map.remove(path);
+        }
+        {
+            let mut guard = self.handle.index.lock().unwrap();
+            guard.upsert_file(
+                path,
+                [0; 16],
+                0,
+                file_qualifier.map(|s| s.to_string()),
+                exports,
+            );
+        }
+        self.handle.mark_dirty();
+    }
+
     pub fn reflatten_all_barrels(&self) {
         let barrel_paths: Vec<String> = {
             let map = self.handle.re_exports_by_barrel.lock().unwrap();

@@ -20,6 +20,8 @@ Auto Import Plus builds a small native Rust daemon for your OS on first activati
 - **Persistent cache.** Index is saved to `.vscode/.auto-import-cache/index.bin` (bincode) and restored on next launch — sub-second cold start for 20k+ file monorepos after the first session.
 - **Safe fallback.** If tree-sitter crashes on a rogue Python file, a regex-based extractor still captures top-level `class` / `def` / assignments.
 - **Always-visible source path.** Every suggested item shows `./user`, `fake-lib`, `pkg.models`, or `com.example.Foo` right-aligned next to the label.
+- **Clearly tagged suggestions.** Completion rows include an `Auto Import Plus` label so they are visually distinguishable from built-in VS Code suggestions.
+- **Standard library imports.** Common Python stdlib, Java JDK, and Node.js core module symbols are available even when they are not present in the workspace index.
 
 ## Supported import shapes
 

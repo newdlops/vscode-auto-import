@@ -2,7 +2,7 @@
   "name": "vscode-auto-import",
   "displayName": "Auto Import Plus",
   "description": "Fast workspace-wide auto import for TypeScript, JavaScript, Python, and Java — powered by a native Rust indexer",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "newdlops",
   "private": true,
   "license": "MIT",

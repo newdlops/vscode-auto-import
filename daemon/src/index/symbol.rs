@@ -22,6 +22,8 @@ pub mod SymbolFlag {
     pub const TYPE_ONLY: u32 = 1 << 1;
     pub const RE_EXPORT: u32 = 1 << 2;
     pub const INNER_CLASS: u32 = 1 << 4;
+    pub const MODULE_IMPORT: u32 = 1 << 5;
+    pub const STANDARD_LIBRARY: u32 = 1 << 6;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

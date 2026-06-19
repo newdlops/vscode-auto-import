@@ -1,14 +1,24 @@
 import * as vscode from 'vscode';
+import { SymbolFlag } from '../../index/types';
 import { parsePyImports, type PyImportStatement } from './pyImportParser';
 
 export function buildPythonImportEdits(
   doc: vscode.TextDocument,
   name: string,
   modulePath: string,
+  flags = 0,
 ): vscode.TextEdit[] {
   if (!modulePath) return [];
   const source = doc.getText();
   const stmts = parsePyImports(source);
+
+  if ((flags & SymbolFlag.ModuleImport) !== 0) {
+    if (stmts.some((s) => s.kind === 'plain' && s.items.some((it) => it.local === name))) {
+      return [];
+    }
+    const insertOffset = findPyInsertOffset(source, stmts);
+    return [vscode.TextEdit.insert(doc.positionAt(insertOffset), `import ${modulePath}\n`)];
+  }
 
   const existing = stmts.find((s) => s.kind === 'from' && s.fromModule === modulePath);
   if (existing) {

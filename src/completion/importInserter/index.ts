@@ -32,7 +32,7 @@ export function buildImportEditsFor(
       );
     case 'python': {
       if (!ctx.fileQualifier) return [];
-      return buildPythonImportEdits(doc, ctx.name, ctx.fileQualifier);
+      return buildPythonImportEdits(doc, ctx.name, ctx.fileQualifier, ctx.flags);
     }
     case 'java': {
       return buildJavaImportEdits(

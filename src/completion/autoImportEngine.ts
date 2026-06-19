@@ -10,6 +10,7 @@ import { resolveTsModuleSpecifier } from './importInserter/tsModuleResolver';
 
 const IDENT_RE = /[A-Za-z_$][\w$]*/;
 const EXACT_IDENT_RE = /^[A-Za-z_$][\w$]*$/;
+const PROVIDER_LABEL = 'Auto Import Plus';
 
 interface ImportsCacheEntry {
   version: number;
@@ -55,7 +56,11 @@ export class AutoImportEngine {
     index: number,
   ): vscode.CompletionItem {
     const item = new vscode.CompletionItem(
-      { label: resolution.suggestion.name, description: resolution.labelDescription },
+      {
+        label: resolution.suggestion.name,
+        detail: `  ${PROVIDER_LABEL}`,
+        description: resolution.labelDescription,
+      },
       toVsCodeKind(resolution.suggestion.kind),
     );
     item.range = resolution.wordRange;
@@ -141,12 +146,14 @@ export class AutoImportEngine {
       const labelDescription = importSpecifier(document, suggestion, lang);
       const reExportMark =
         suggestion.flags & SymbolFlag.ReExport ? ' (re-export)' : '';
+      const standardLibraryMark =
+        suggestion.flags & SymbolFlag.StandardLibrary ? ' [standard library]' : '';
       resolutions.push({
         suggestion,
         wordRange,
         edits,
         labelDescription: `${labelDescription}${reExportMark}`,
-        detail: `↪ auto-import from ${labelDescription}${reExportMark}`,
+        detail: `↪ auto-import from ${labelDescription}${reExportMark}${standardLibraryMark}`,
       });
     }
 

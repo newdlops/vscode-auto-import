@@ -20,6 +20,7 @@ use crate::persistence;
 use crate::workspace::indexer::{IndexerHandle, Settings};
 use crate::workspace::library::scan_libraries;
 use crate::workspace::scanner::{build_globset, scan_workspace};
+use crate::workspace::standard_library::index_standard_libraries;
 use crate::workspace::WorkspaceIndexer;
 
 type SharedIndexer = Arc<AsyncMutex<Option<Arc<WorkspaceIndexer>>>>;
@@ -149,6 +150,20 @@ pub async fn run() -> Result<()> {
                                 }
                             }
                         }
+
+                        let languages = parse_languages(&config.languages);
+                        let stdlib = index_standard_libraries(indexer_arc.as_ref(), &languages);
+                        send_notification(
+                            &notify_tx,
+                            "log",
+                            json!({
+                                "level": "info",
+                                "message": format!(
+                                    "standard libraries indexed: ts/js={} python={} java={}",
+                                    stdlib.typescript, stdlib.python, stdlib.java
+                                )
+                            }),
+                        );
 
                         respond(
                             &writer,
@@ -590,6 +605,15 @@ fn run_query(indexer: &WorkspaceIndexer, q: &QueryParams) -> Vec<Suggestion> {
     }
 
     scored.sort_by(|a, b| b.1.cmp(&a.1));
+    let mut seen = std::collections::HashSet::new();
+    scored.retain(|(s, _)| {
+        seen.insert((
+            s.name.clone(),
+            s.target_path.clone(),
+            s.file_qualifier.clone(),
+            s.parent_qualifier.clone(),
+        ))
+    });
     scored.truncate(q.limit);
     scored.into_iter().map(|(s, _)| s).collect()
 }
@@ -622,6 +646,12 @@ fn compute_score(prefix: &str, name: &str, flags: u32, depth: i32) -> i32 {
     }
     if (flags & SymbolFlag::DEFAULT_EXPORT) != 0 {
         score += 5;
+    }
+    if (flags & SymbolFlag::STANDARD_LIBRARY) != 0 {
+        score -= 25;
+    }
+    if (flags & SymbolFlag::MODULE_IMPORT) != 0 {
+        score -= 3;
     }
     score -= depth * 2;
     score

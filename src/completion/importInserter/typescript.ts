@@ -20,13 +20,17 @@ export function buildTsImportEdits(
   const modulePath = pickModuleSpecifier(doc, moduleSpecifier, targetPath);
   if (!modulePath) return [];
 
+  const source = doc.getText();
+  const imports = parseTsImports(source);
+
+  if ((flags & SymbolFlag.ModuleImport) !== 0) {
+    return buildNamespaceImportEdits(doc, source, imports, modulePath, name);
+  }
+
   const isDefault = (flags & SymbolFlag.DefaultExport) !== 0;
   const policy = config.typescript.preferTypeImports;
   const wantTypeOnly =
     policy === 'always' || (policy === 'auto' && (flags & SymbolFlag.TypeOnly) !== 0);
-
-  const source = doc.getText();
-  const imports = parseTsImports(source);
 
   if (isDefault) {
     const merged = tryAddDefault(doc, source, imports, modulePath, name);
@@ -59,6 +63,28 @@ function buildImportLine(
   const kw = typeOnly ? 'import type' : 'import';
   if (isDefault) return `${kw} ${name} from '${modulePath}';`;
   return `${kw} { ${name} } from '${modulePath}';`;
+}
+
+function buildNamespaceImportEdits(
+  doc: vscode.TextDocument,
+  source: string,
+  imports: ImportStatement[],
+  modulePath: string,
+  name: string,
+): vscode.TextEdit[] {
+  for (const stmt of imports) {
+    if (stmt.clause.defaultName === name) return [];
+    if (stmt.clause.namespaceName === name) return [];
+    if (stmt.clause.named?.items.some((it) => it.local === name)) return [];
+  }
+
+  const insertOffset = findTsInsertOffset(source, imports);
+  return [
+    vscode.TextEdit.insert(
+      doc.positionAt(insertOffset),
+      `import * as ${name} from '${modulePath}';\n`,
+    ),
+  ];
 }
 
 function tryMergeNamed(
