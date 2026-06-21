@@ -148,6 +148,10 @@ export class DaemonClient {
     alreadyImported: string[];
     limit: number;
     language: string;
+    context?: {
+      linePrefix: string;
+      lineSuffix: string;
+    };
   }): Promise<Suggestion[]> {
     const res = await this.request<{ suggestions: Suggestion[] }>('query', params);
     return res.suggestions;

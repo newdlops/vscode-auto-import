@@ -116,6 +116,7 @@ export class AutoImportEngine {
         alreadyImported: [...alreadyImported],
         limit: this.config.maxResults,
         language: lang,
+        context: buildQueryContext(document, wordRange),
       });
       this.logger.debug(
         `query "${prefix}" → ${suggestions.length} suggestions in ${(performance.now() - t0).toFixed(1)}ms`,
@@ -181,6 +182,17 @@ export class AutoImportEngine {
       document.getWordRangeAtPosition(range.end, IDENT_RE)
     );
   }
+}
+
+function buildQueryContext(
+  doc: vscode.TextDocument,
+  wordRange: vscode.Range,
+): { linePrefix: string; lineSuffix: string } {
+  const line = doc.lineAt(wordRange.start.line).text;
+  return {
+    linePrefix: line.slice(0, wordRange.start.character),
+    lineSuffix: line.slice(wordRange.end.character),
+  };
 }
 
 function importSpecifier(

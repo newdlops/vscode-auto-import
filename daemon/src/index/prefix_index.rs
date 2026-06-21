@@ -67,6 +67,22 @@ impl PrefixIndex {
             }
             results.push(id);
         }
+        if results.len() < limit && prefix.len() >= 2 {
+            for &id in bucket {
+                if results.len() >= limit {
+                    break;
+                }
+                if results.contains(&id) {
+                    continue;
+                }
+                let Some(s) = table.get(id) else {
+                    continue;
+                };
+                if initials_match(s, &lower_prefix) {
+                    results.push(id);
+                }
+            }
+        }
         results
     }
 
@@ -121,4 +137,63 @@ fn starts_with_ignore_ascii_case(s: &str, lower_prefix: &str) -> bool {
     s.bytes()
         .zip(lower_prefix.bytes())
         .all(|(a, b)| a.to_ascii_lowercase() == b)
+}
+
+pub(crate) fn initials_match(s: &str, lower_prefix: &str) -> bool {
+    if lower_prefix.is_empty() {
+        return false;
+    }
+    let mut wanted = lower_prefix.bytes();
+    let Some(mut next) = wanted.next() else {
+        return false;
+    };
+    let mut prev: Option<u8> = None;
+    for b in s.bytes() {
+        let is_boundary = prev.map_or(true, |p| {
+            p == b'_'
+                || p == b'-'
+                || p == b'.'
+                || p == b'$'
+                || (b.is_ascii_uppercase() && (p.is_ascii_lowercase() || p.is_ascii_digit()))
+                || (b.is_ascii_digit() && !p.is_ascii_digit())
+        });
+        if is_boundary && b.to_ascii_lowercase() == next {
+            match wanted.next() {
+                Some(n) => next = n,
+                None => return true,
+            }
+        }
+        prev = Some(b);
+    }
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lookup_prefix_includes_pascal_case_initials() {
+        let mut table = StringTable::new();
+        let user_info_card = table.intern("UserInfoCard");
+        table.intern("UserSettings");
+        table.intern("UploadIcon");
+        let mut index = PrefixIndex::new();
+
+        let results = index.lookup_prefix(&table, "UIC", 10);
+
+        assert!(results.contains(&user_info_card));
+    }
+
+    #[test]
+    fn lookup_prefix_includes_separator_initials() {
+        let mut table = StringTable::new();
+        let create_user = table.intern("create_user");
+        table.intern("createAccount");
+        let mut index = PrefixIndex::new();
+
+        let results = index.lookup_prefix(&table, "cu", 10);
+
+        assert!(results.contains(&create_user));
+    }
 }

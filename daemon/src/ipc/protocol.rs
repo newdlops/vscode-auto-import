@@ -106,6 +106,15 @@ pub struct QueryParams {
     #[serde(default = "default_limit")]
     pub limit: usize,
     pub language: String,
+    #[serde(default)]
+    pub context: QueryContext,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryContext {
+    pub line_prefix: String,
+    pub line_suffix: String,
 }
 
 fn default_limit() -> usize {

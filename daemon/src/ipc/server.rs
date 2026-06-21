@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::path::{Component, Path};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -14,7 +15,8 @@ use super::protocol::{
     ErrorObject, IndexFileParams, InitParams, Notification, QueryParams, RemoveFileParams, Request,
     Response, Suggestion,
 };
-use crate::index::SymbolFlag;
+use crate::index::prefix_index::initials_match;
+use crate::index::{SymbolFlag, SymbolKind};
 use crate::parsers::ParserLanguage;
 use crate::persistence;
 use crate::workspace::indexer::{IndexerHandle, Settings};
@@ -558,6 +560,7 @@ fn run_query(indexer: &WorkspaceIndexer, q: &QueryParams) -> Vec<Suggestion> {
     let budget = (q.limit * 10).max(200);
 
     let candidate_ids = guard.lookup_prefix(&q.prefix, budget);
+    let hints = context_hints(query_lang, &q.context.line_prefix, &q.context.line_suffix);
 
     let mut scored: Vec<(Suggestion, i32)> = Vec::new();
     for name_id in candidate_ids {
@@ -590,7 +593,16 @@ fn run_query(indexer: &WorkspaceIndexer, q: &QueryParams) -> Vec<Suggestion> {
                 .parent_name_id
                 .and_then(|id| guard.name_str(id).map(|s| s.to_string()));
             let depth = target_path.chars().filter(|&c| c == '/').count() as i32;
-            let score = compute_score(&q.prefix, &name, entry.flags, depth);
+            let proximity = path_proximity_score(&q.current_path, &target_path);
+            let score = compute_score(
+                &q.prefix,
+                &name,
+                entry.kind,
+                entry.flags,
+                depth,
+                proximity,
+                &hints,
+            );
             let suggestion = Suggestion::from_kind(
                 name.clone(),
                 entry.kind,
@@ -632,7 +644,24 @@ fn same_lang_group(a: ParserLanguage, b: ParserLanguage) -> bool {
     }
 }
 
-fn compute_score(prefix: &str, name: &str, flags: u32, depth: i32) -> i32 {
+#[derive(Debug, Default)]
+struct QueryHints {
+    type_context: bool,
+    construct_context: bool,
+    call_context: bool,
+    module_context: bool,
+    annotation_context: bool,
+}
+
+fn compute_score(
+    prefix: &str,
+    name: &str,
+    kind: SymbolKind,
+    flags: u32,
+    depth: i32,
+    proximity: i32,
+    hints: &QueryHints,
+) -> i32 {
     let mut score: i32 = 0;
     let lower_name = name.to_ascii_lowercase();
     let lower_prefix = prefix.to_ascii_lowercase();
@@ -642,9 +671,13 @@ fn compute_score(prefix: &str, name: &str, flags: u32, depth: i32) -> i32 {
         score += 500;
     } else if lower_name.starts_with(&lower_prefix) {
         score += 300;
+    } else if initials_match(name, &lower_prefix) {
+        score += 240;
     }
     let extra = (name.len() as i32 - (prefix.len() as i32) * 2).max(0);
     score -= extra;
+    score += context_score(kind, flags, hints);
+    score += proximity;
     if (flags & SymbolFlag::RE_EXPORT) != 0 {
         score -= 10;
     }
@@ -659,6 +692,333 @@ fn compute_score(prefix: &str, name: &str, flags: u32, depth: i32) -> i32 {
     }
     score -= depth * 2;
     score
+}
+
+fn context_score(kind: SymbolKind, flags: u32, hints: &QueryHints) -> i32 {
+    let mut score = 0;
+    if hints.construct_context {
+        score += match kind {
+            SymbolKind::Class => 160,
+            SymbolKind::Interface | SymbolKind::TypeAlias => -90,
+            SymbolKind::Function => -40,
+            _ => 0,
+        };
+    }
+    if hints.type_context {
+        score += match kind {
+            SymbolKind::Class
+            | SymbolKind::Interface
+            | SymbolKind::TypeAlias
+            | SymbolKind::Enum
+            | SymbolKind::Namespace => 120,
+            SymbolKind::Function => -70,
+            SymbolKind::Variable => -50,
+            _ => 0,
+        };
+        if (flags & SymbolFlag::TYPE_ONLY) != 0 {
+            score += 45;
+        }
+    }
+    if hints.call_context {
+        score += match kind {
+            SymbolKind::Function | SymbolKind::Method => 90,
+            SymbolKind::Class => 35,
+            SymbolKind::Interface | SymbolKind::TypeAlias => -80,
+            _ => 0,
+        };
+    }
+    if hints.module_context {
+        score += match kind {
+            SymbolKind::Module | SymbolKind::Namespace => 120,
+            _ => -25,
+        };
+        if (flags & SymbolFlag::MODULE_IMPORT) != 0 {
+            score += 80;
+        }
+    }
+    if hints.annotation_context {
+        score += match kind {
+            SymbolKind::Function => 70,
+            SymbolKind::Class | SymbolKind::Interface => 60,
+            SymbolKind::Variable => -20,
+            _ => 0,
+        };
+    }
+    if (flags & SymbolFlag::TYPE_ONLY) != 0
+        && !hints.type_context
+        && (hints.call_context || hints.construct_context)
+    {
+        score -= 100;
+    }
+    score
+}
+
+fn context_hints(lang: ParserLanguage, line_prefix: &str, line_suffix: &str) -> QueryHints {
+    let before = line_prefix.trim_end();
+    let after = line_suffix.trim_start();
+    let mut hints = QueryHints::default();
+
+    if after.starts_with('(') {
+        hints.call_context = true;
+    }
+    if after.starts_with('.') {
+        hints.module_context = true;
+    }
+    if before.ends_with('@') {
+        hints.annotation_context = true;
+    }
+
+    match lang {
+        ParserLanguage::TypeScript | ParserLanguage::JavaScript => {
+            if ends_with_word(before, "new") || ends_with_word(before, "instanceof") {
+                hints.construct_context = true;
+            }
+            if is_likely_ts_type_annotation(before)
+                || before.ends_with('<')
+                || before.ends_with('|')
+                || before.ends_with('&')
+                || ends_with_word(before, "as")
+                || ends_with_word(before, "satisfies")
+                || ends_with_word(before, "extends")
+                || ends_with_word(before, "implements")
+                || ends_with_word(before, "type")
+                || ends_with_word(before, "interface")
+            {
+                hints.type_context = true;
+            }
+            if ends_with_word(before, "import") || ends_with_word(before, "from") {
+                hints.module_context = true;
+            }
+        }
+        ParserLanguage::Python => {
+            if is_likely_python_type_annotation(before)
+                || before.ends_with("->")
+                || before.ends_with('[')
+                || before.ends_with('|')
+                || ends_with_word(before, "class")
+                || ends_with_word(before, "except")
+            {
+                hints.type_context = true;
+            }
+        }
+        ParserLanguage::Java => {
+            if ends_with_word(before, "new") {
+                hints.construct_context = true;
+            }
+            if before.ends_with('@') {
+                hints.annotation_context = true;
+            }
+            if before.ends_with('<')
+                || before.ends_with(',')
+                || ends_with_word(before, "extends")
+                || ends_with_word(before, "implements")
+                || ends_with_word(before, "throws")
+                || ends_with_word(before, "catch")
+                || ends_with_word(before, "instanceof")
+            {
+                hints.type_context = true;
+            }
+        }
+    }
+
+    hints
+}
+
+fn path_proximity_score(current_path: &str, target_path: &str) -> i32 {
+    let mut score = 0;
+    if is_external_path(target_path) {
+        score -= 25;
+    }
+
+    let current_parent = parent_components(current_path);
+    let target_parent = parent_components(target_path);
+    if current_parent.is_empty() || target_parent.is_empty() {
+        return score;
+    }
+
+    let common = current_parent
+        .iter()
+        .zip(target_parent.iter())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let distance = (current_parent.len() - common) + (target_parent.len() - common);
+    score
+        + match distance {
+            0 => 80,
+            1 => 55,
+            2 => 35,
+            3 => 20,
+            4 | 5 => 8,
+            _ => 0,
+        }
+}
+
+fn is_likely_ts_type_annotation(before: &str) -> bool {
+    if !before.ends_with(':') {
+        return false;
+    }
+    let head = before[..before.len() - 1].trim_end();
+    let lower = head.to_ascii_lowercase();
+    let last_brace = head.rfind('{');
+    let last_equals = head.rfind('=');
+    if last_brace > last_equals && !lower.contains("type ") && !lower.contains("interface ") {
+        return false;
+    }
+    if head.ends_with(')') {
+        return true;
+    }
+    if lower.contains("const ") || lower.contains("let ") || lower.contains("var ") {
+        return true;
+    }
+    if lower.contains("function ") || lower.contains("interface ") || lower.contains("type ") {
+        return true;
+    }
+    let last_paren = head.rfind('(');
+    last_paren > last_brace
+}
+
+fn is_likely_python_type_annotation(before: &str) -> bool {
+    if !before.ends_with(':') {
+        return false;
+    }
+    let head = before[..before.len() - 1].trim_end();
+    let last_brace = head.rfind('{');
+    let last_bracket = head.rfind('[');
+    let last_equals = head.rfind('=');
+    if (last_brace > last_equals) || (last_bracket > last_equals) {
+        return false;
+    }
+    true
+}
+
+fn parent_components(path: &str) -> Vec<String> {
+    Path::new(path)
+        .parent()
+        .map(|p| {
+            p.components()
+                .filter_map(|c| match c {
+                    Component::Normal(s) => s.to_str().map(|s| s.to_string()),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn is_external_path(path: &str) -> bool {
+    path.contains("/node_modules/")
+        || path.contains("\\node_modules\\")
+        || path.contains("/site-packages/")
+        || path.contains("\\site-packages\\")
+}
+
+fn ends_with_word(s: &str, word: &str) -> bool {
+    if !s.ends_with(word) {
+        return false;
+    }
+    let before = &s[..s.len() - word.len()];
+    before
+        .bytes()
+        .next_back()
+        .map_or(true, |b| !is_ident_byte(b))
+}
+
+fn is_ident_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_' || b == b'$'
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scoring_uses_construct_context_to_prefer_classes() {
+        let hints = QueryHints {
+            construct_context: true,
+            ..QueryHints::default()
+        };
+
+        let class_score = compute_score("Us", "UserService", SymbolKind::Class, 0, 3, 0, &hints);
+        let interface_score = compute_score(
+            "Us",
+            "UserService",
+            SymbolKind::Interface,
+            SymbolFlag::TYPE_ONLY,
+            3,
+            0,
+            &hints,
+        );
+
+        assert!(class_score > interface_score);
+    }
+
+    #[test]
+    fn scoring_uses_type_context_to_prefer_type_symbols() {
+        let hints = QueryHints {
+            type_context: true,
+            ..QueryHints::default()
+        };
+
+        let type_score = compute_score(
+            "Us",
+            "UserShape",
+            SymbolKind::TypeAlias,
+            SymbolFlag::TYPE_ONLY,
+            3,
+            0,
+            &hints,
+        );
+        let function_score =
+            compute_score("Us", "UserShape", SymbolKind::Function, 0, 3, 0, &hints);
+
+        assert!(type_score > function_score);
+    }
+
+    #[test]
+    fn scoring_uses_call_context_to_prefer_functions() {
+        let hints = QueryHints {
+            call_context: true,
+            ..QueryHints::default()
+        };
+
+        let function_score = compute_score("lo", "loadUser", SymbolKind::Function, 0, 3, 0, &hints);
+        let type_score = compute_score(
+            "lo",
+            "loadUser",
+            SymbolKind::TypeAlias,
+            SymbolFlag::TYPE_ONLY,
+            3,
+            0,
+            &hints,
+        );
+
+        assert!(function_score > type_score);
+    }
+
+    #[test]
+    fn scoring_uses_initials_when_prefix_is_not_contiguous() {
+        let hints = QueryHints::default();
+
+        let score = compute_score("UIC", "UserInfoCard", SymbolKind::Class, 0, 3, 0, &hints);
+
+        assert!(score > 0);
+    }
+
+    #[test]
+    fn context_hints_detect_typescript_type_positions() {
+        let hints = context_hints(ParserLanguage::TypeScript, "const user: ", "");
+
+        assert!(hints.type_context);
+    }
+
+    #[test]
+    fn path_proximity_prefers_nearby_workspace_files() {
+        let nearby = path_proximity_score("/repo/src/views/user.ts", "/repo/src/views/model.ts");
+        let external =
+            path_proximity_score("/repo/src/views/user.ts", "/repo/node_modules/pkg/model.ts");
+
+        assert!(nearby > external);
+    }
 }
 
 async fn respond(
